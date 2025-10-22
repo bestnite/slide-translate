@@ -180,28 +180,29 @@ def refine_and_translate_content(markdown_path, pdf_path):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python main.py <pdf_file_name>")
-        print("Example: python main.py material.pdf")
-        print("Make sure you put pdf file into input directory")
+    input_dir = "input"
+    output_dir = "output"
+    os.makedirs(output_dir, exist_ok=True)
+
+    pdf_files = [f for f in os.listdir(input_dir) if f.endswith(".pdf")]
+
+    if not pdf_files:
+        print(f"Error: No PDF files found in the '{input_dir}' directory.")
         sys.exit(1)
 
-    fileName = sys.argv[1]
-    if not fileName.endswith(".pdf"):
-        print("Error: The provided file must be a PDF file (e.g., 08.pdf)")
-        sys.exit(1)
+    for fileName in pdf_files:
+        print(f"\nProcessing file: {fileName}")
+        input_doc_path = os.path.join(input_dir, fileName)
+        output_md_path = os.path.join(output_dir, fileName.replace(".pdf", ".md"))
 
-    input_doc_path = os.path.join("input", fileName)
-    output_md_path = os.path.join("output", fileName.replace(".pdf", ".md"))
+        # Step 1: Convert PDF to Markdown
+        convert_pdf_to_markdown(input_doc_path, output_md_path)
 
-    # Step 1: Convert PDF to Markdown
-    convert_pdf_to_markdown(input_doc_path, output_md_path)
+        # Step 2: Simplify image references
+        simplify_image_references_in_markdown(output_md_path)
 
-    # Step 2: Simplify image references
-    simplify_image_references_in_markdown(output_md_path)
-
-    # # Step 3: Refine and translate the content
-    refine_and_translate_content(output_md_path, input_doc_path)
+        # # Step 3: Refine and translate the content
+        refine_and_translate_content(output_md_path, input_doc_path)
 
 
 if __name__ == "__main__":
