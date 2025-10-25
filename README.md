@@ -49,3 +49,13 @@ GOOGLE_API_KEY = 您的Google API密钥
 
 - [docling](https://github.com/docling-project/docling)
 - [langchain](https://github.com/langchain-ai/langchain)
+
+## 常见问题
+
+### docling 转换 PDF 时报错
+
+可能是 PDF 文件不规范导致的，可以尝试使用 ghostscript 规范文件。
+
+```shell
+gs -o <output.pdf> -sDEVICE=pdfwrite -dPDFSETTINGS=/default <input.pdf>
+```

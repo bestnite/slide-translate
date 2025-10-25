@@ -51,7 +51,9 @@ def convert_pdf_to_markdown(input_doc_path, output_md_path):
 
     doc.save_as_markdown(
         filename=Path(output_md_path),
-        artifacts_dir=Path(os.path.join(os.path.splitext(os.path.basename(output_md_path))[0], "image")),
+        artifacts_dir=Path(
+            os.path.join(os.path.splitext(os.path.basename(output_md_path))[0], "image")
+        ),
         image_mode=ImageRefMode.REFERENCED,
     )
     print(f"Conversion took: {doc_conversion_secs} seconds")
@@ -100,8 +102,8 @@ def refine_and_translate_content(markdown_path, pdf_path):
     print("Starting content refinement and translation...")
 
     config = configparser.ConfigParser()
-    config.read('config.ini')
-    google_api_key = config.get('api_keys', 'GOOGLE_API_KEY', fallback=None)
+    config.read("config.ini")
+    google_api_key = config.get("api_keys", "GOOGLE_API_KEY", fallback=None)
 
     if not google_api_key:
         print("Error: GOOGLE_API_KEY not found in config.ini")
@@ -117,8 +119,9 @@ def refine_and_translate_content(markdown_path, pdf_path):
         return
 
     try:
-        with open(markdown_path, "rb") as f:
-            markdown_content = f.read()
+        with open(markdown_path, "r", encoding="utf-8") as f:
+            markdown_text = f.read()
+        markdown_content = markdown_text.encode("utf-8")
 
         with open(pdf_path, "rb") as pdf_file:
             pdf_bytes = pdf_file.read()
@@ -133,37 +136,73 @@ def refine_and_translate_content(markdown_path, pdf_path):
     请根据提供的 Markdown 和 PDF 执行以下四项操作：
 
     1.  **清理多余字符**：查看 Markdown 文本，删除原始 PDF 中不存在的任何转换伪影或奇怪格式。
-    2.  **解释图像内容**：参考 PDF 中的图表、示意图和图像，在图像引用后添加清晰简洁的解释。
+    2.  **解释图像内容**：参考 PDF 中的图表、示意图和图像，在图像引用后添加清晰的解释。
     3.  **更正列表格式**：转换可能使嵌套列表扁平化。分析 PDF 中的列表结构，并在 Markdown 中恢复正确的多级缩进。
-    4.  **翻译成中文**：将整个清理和更正后的文档翻译成简体中文。当您遇到专业或技术术语时，您必须在其译文旁边保留原始英文术语并用括号括起来。
+    4.  **更正数学公式和符号**：将纯文字公式转换为正确的公式表达，例如 `Kmin` 应使用 `$K_{min}`，`E = hc/λ`，应使用 `$E = \\frac{hc}{\\lambda}$`
+    5.  **调整标题**：将相同层级的同名标题按照小节内的不同内容重新命名，避免同层级同名标题出现，并且确保大纲的清晰性。
+    6.  **翻译成中文**：将整个清理和更正后的文档翻译成简体中文。当您遇到专业或技术术语时，您必须在其译文旁边保留原始英文术语并用括号括起来。
     
     只需要输出调整翻译后的 markdown 文本，不需要任何其他的文字内容。
     """
 
+    human_message_parts = [
+        {
+            "type": "media",
+            "mime_type": "text/markdown",
+            "data": base64.b64encode(markdown_content).decode("utf-8"),
+        },
+    ]
+
+    # Find all image references in the markdown content
+    image_paths = re.findall(r"!\[.*?\]\((.*?)\)", markdown_text)
+    markdown_dir = os.path.dirname(markdown_path)
+
+    if image_paths:
+        print(f"Found {len(image_paths)} image references in the markdown file.")
+        for image_path in image_paths:
+            # Construct the full path to the image file
+            full_image_path = os.path.join(markdown_dir, image_path)
+            if os.path.exists(full_image_path):
+                with open(full_image_path, "rb") as f:
+                    image_data = f.read()
+
+                human_message_parts.append(
+                    {
+                        "type": "text",
+                        "text": f"这是图片 '{os.path.basename(image_path)}':\n",
+                    }
+                )
+                human_message_parts.append(
+                    {
+                        "type": "media",
+                        "mime_type": "image/png",
+                        "data": base64.b64encode(image_data).decode("utf-8"),
+                    }
+                )
+            else:
+                print(f"Warning: Image file not found at {full_image_path}")
+
+    human_message_parts.extend(
+        [
+            {
+                "type": "text",
+                "text": "这是原始的PDF文件:\n",
+            },
+            {
+                "type": "media",
+                "mime_type": "application/pdf",
+                "data": base64.b64encode(pdf_bytes).decode("utf-8"),
+            },
+        ]
+    )
+
     message_content = [
         SystemMessage(prompt),
-        HumanMessage(
-            [
-                {
-                    "type": "media",
-                    "mime_type": "text/markdown",
-                    "data": base64.b64encode(markdown_content).decode("utf-8"),
-                },
-                {
-                    "type": "text",
-                    "text": "这是原始的PDF文件:\n",
-                },
-                {
-                    "type": "media",
-                    "mime_type": "application/pdf",
-                    "data": base64.b64encode(pdf_bytes).decode("utf-8"),
-                },
-            ]
-        ),
+        HumanMessage(human_message_parts),
     ]
 
     print(
-        "Sending request to Gemini with the PDF and Markdown... This may take a moment."
+        "Sending request to Gemini with the PDF, Markdown and referenced images... This may take a moment."
     )
     try:
         response = llm.invoke(message_content)
